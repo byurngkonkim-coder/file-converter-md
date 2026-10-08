@@ -31,6 +31,11 @@ class ConversionResult:
     extra_metadata: dict[str, Any] = field(default_factory=dict)
 
 
+class ScannedDocumentSkipped(Exception):
+    """텍스트 레이어가 없는 스캔 PDF 또는 이미지 문서 변환 제외 시 발생하는 예외."""
+    pass
+
+
 class BaseAdapter:
     """모든 형식 변환 어댑터의 기반 클래스."""
 
@@ -38,6 +43,6 @@ class BaseAdapter:
         """해당 확장자를 처리할 수 있는지 여부를 반환합니다."""
         raise NotImplementedError
 
-    def convert(self, path: Path, session: Any = None) -> ConversionResult:
+    def convert(self, path: Path, session: Any = None, **kwargs) -> ConversionResult:
         """파일을 변환하여 ConversionResult 를 반환합니다."""
         raise NotImplementedError

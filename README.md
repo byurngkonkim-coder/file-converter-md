@@ -13,7 +13,7 @@
    - 구버전/현대 Office: `.doc`, `.docx`, `.ppt`, `.pptx`, `.xls`, `.xlsx`, `.rtf`
    - 한글 문서: `.hwp`, `.hwpx` (백그라운드 보안 팝업 자동 승인 스레드 내장)
    - PDF & 스캔 문서: PyMuPDF / MarkItDown 텍스트 레이어 추출 및 스캔 PDF의 자동 OCR 판별
-   - 이미지 문서: `.png`, `.jpg`, `.jpeg`, `.bmp`, `.tiff` 등 PaddleOCR 기반 한국어/영어 텍스트 인식
+   - 이미지 문서: `.png`, `.jpg`, `.jpeg`, `.bmp`, `.tiff` 등 RapidOCR(ONNX 기반 PP-OCR) 기반 한국어/영어 텍스트 인식
    - 텍스트/마크다운: `.txt` (인코딩 자동감지), `.md` (기존 Front Matter 보존 및 병합)
    - 전자책: `.epub` (spine 읽기 순서 유지 변환)
 3. **가독성 정제 후처리 (`core/text_postprocessor.py`)**:
@@ -49,7 +49,7 @@ d:\백업\utility\파일형식변환기_MD\
 │   ├── frontmatter_builder.py # OKF 규격 YAML Front Matter 조립 및 유효성 검증
 │   ├── markdown_formatter.py  # Markdown 본문 표준 템플릿 조립기
 │   ├── batch_runner.py        # 배치 실행 엔진, 중복 파일명 회피, 결과 보고서 관리
-│   └── ocr_worker.py          # PaddleOCR 독립 워커 프로세스
+│   └── ocr_worker.py          # RapidOCR(ONNX 기반 PP-OCR) 독립 워커 프로세스
 ├── adapters/                  # 포맷별 독립 변환 어댑터
 │   ├── __init__.py            # 어댑터 레지스트리 및 엔진 라우터 (auto, markitdown, native)
 │   ├── base.py                # BaseAdapter 인터페이스 & ConversionResult
@@ -76,10 +76,9 @@ d:\백업\utility\파일형식변환기_MD\
 ### 3.1 GUI 모드 (가장 간편한 방법)
 1. `run_gui.bat` 파일을 더블 클릭하여 실행합니다.
 2. 변환할 파일 또는 폴더를 창으로 끌어다 놓거나(드래그 앤 드롭), **[+ 파일 추가...]** 또는 **[+ 폴더 추가...]** 버튼을 클릭합니다.
-3. 변환 엔진을 선택합니다:
-   - **auto (스마트 자동)** [기본값]: HWP 및 구버전 문서는 네이티브, 최신 Office/PDF는 MarkItDown 활용
-   - **markitdown (MS MarkItDown 우선)**: MarkItDown 지원 포맷에 대해 우선 적용
-   - **native (내장 전용 어댑터)**: 기존 자체 내장 어댑터 사용
+3. 변환 옵션을 설정합니다:
+   - **엔진 선택**: auto (스마트 자동 기본) / markitdown / native
+   - **옵션 선택**: `하위 폴더 포함`, `덮어쓰기`, `텍스트 없는 PDF/스캔 제외 (OCR 생략)`
 4. 출력 폴더를 지정한 후 **[변환 시작]** 버튼을 누릅니다.
 5. 변환 완료 후 **[결과 폴더 열기]** 버튼을 눌러 생성된 `.md` 파일들을 확인합니다.
 
@@ -91,13 +90,16 @@ d:\백업\utility\파일형식변환기_MD\
    # 특정 폴더 일괄 변환 (스마트 자동 엔진 기본)
    python -X utf8 cli.py "D:\문서\보고서"
 
+   # 텍스트 레이어가 없는 스캔 PDF 및 이미지 제외 (OCR 생략)
+   python -X utf8 cli.py "D:\문서\보고서" --skip-scanned
+
    # MarkItDown 엔진 우선 지정 변환
    python -X utf8 cli.py "D:\문서\보고서" --engine markitdown
 
    # 결과 폴더 지정 및 기존 파일 덮어쓰기
    python -X utf8 cli.py "D:\문서\보고서" -o "D:\결과_MD" --overwrite
 
-   # 자체 검증 테스트 실행 (7개 항목 전체 테스트)
+   # 자체 검증 테스트 실행 (전체 무결성 테스트)
    python -X utf8 cli.py --selftest
    ```
 

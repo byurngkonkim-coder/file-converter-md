@@ -111,25 +111,27 @@ class App:
         scrollbar.pack(side="right", fill="y")
         self.listbox.config(yscrollcommand=scrollbar.set)
 
-        # 드래그 앤 드롭 바인딩 (windnd 최우선 후킹, tkinterdnd2 보조)
+        # 드래그 앤 드롭 바인딩 (tkinterdnd2 최우선 등록, windnd 보조)
         self.dnd_enabled = False
-        if _HAS_WINDND:
+        if _HAS_TKDND and hasattr(self.root, "drop_target_register"):
+            try:
+                for w in [self.root, self.listbox, list_container, main_frame, top_frame]:
+                    try:
+                        w.drop_target_register(DND_FILES)
+                        w.dnd_bind("<<Drop>>", self.on_tkdnd_drop)
+                    except Exception:
+                        pass
+                self.dnd_enabled = True
+            except Exception as e:
+                print(f"[알림] tkinterdnd2 바인딩 실패: {e}")
+
+        if not self.dnd_enabled and _HAS_WINDND:
             try:
                 windnd.hook_dropfiles(self.listbox, func=self.on_windnd_drop)
                 windnd.hook_dropfiles(self.root, func=self.on_windnd_drop)
                 self.dnd_enabled = True
             except Exception as e:
                 print(f"[알림] windnd 바인딩 실패: {e}")
-
-        if not self.dnd_enabled and _HAS_TKDND and hasattr(self.listbox, "drop_target_register"):
-            try:
-                self.listbox.drop_target_register(DND_FILES)
-                self.listbox.dnd_bind("<<Drop>>", self.on_tkdnd_drop)
-                self.root.drop_target_register(DND_FILES)
-                self.root.dnd_bind("<<Drop>>", self.on_tkdnd_drop)
-                self.dnd_enabled = True
-            except Exception as e:
-                print(f"[알림] tkinterdnd2 바인딩 실패: {e}")
 
         # 파일 추가 버튼 바
         btn_frame = tk.Frame(main_frame)
@@ -181,7 +183,15 @@ class App:
         chk_ow = tk.Checkbutton(chk_subframe, text="덮어쓰기", variable=self.var_overwrite)
         chk_ow.pack(side="left", padx=4)
 
-        tk.Label(chk_subframe, text="|  변환 엔진:").pack(side="left", padx=(10, 4))
+        self.var_skip_scanned = tk.BooleanVar(value=False)
+        chk_skip_scan = tk.Checkbutton(
+            chk_subframe,
+            text="텍스트 없는 PDF/스캔 제외 (OCR 생략)",
+            variable=self.var_skip_scanned,
+        )
+        chk_skip_scan.pack(side="left", padx=4)
+
+        tk.Label(chk_subframe, text="|  엔진:").pack(side="left", padx=(8, 2))
         self.var_engine = tk.StringVar(value="auto (스마트 자동)")
         self.combo_engine = ttk.Combobox(
             chk_subframe,
@@ -192,7 +202,7 @@ class App:
                 "native (내장 전용 어댑터)",
             ],
             state="readonly",
-            width=28,
+            width=26,
         )
         self.combo_engine.pack(side="left", padx=2)
 
@@ -221,6 +231,12 @@ class App:
 
         self.txt_log = ScrolledText(log_frame, height=8, font=("Consolas", 9), bg="#f8f9fa")
         self.txt_log.pack(fill="both", expand=True)
+        if self.dnd_enabled and hasattr(self.txt_log, "drop_target_register"):
+            try:
+                self.txt_log.drop_target_register(DND_FILES)
+                self.txt_log.dnd_bind("<<Drop>>", self.on_tkdnd_drop)
+            except Exception:
+                pass
 
         self.root.after(100, self.process_queue)
         dnd_status_txt = "활성화됨 (파일/폴더 지원)" if self.dnd_enabled else "비활성화 (버튼 추가 이용)"
@@ -261,8 +277,7 @@ class App:
             if p:
                 paths.append(p)
         if paths:
-            self.log(f"[드래그 앤 드롭] {len(paths)}개 항목(파일/폴더) 감지됨")
-            self.add_paths(paths)
+            self.root.after(0, lambda: self._handle_dropped_paths(paths))
 
     def on_tkdnd_drop(self, event):
         """tkinterdnd2 를 통한 드래그 앤 드롭 수신 (파일 및 폴더 지원)."""
@@ -278,8 +293,11 @@ class App:
             if p:
                 paths.append(p)
         if paths:
-            self.log(f"[드래그 앤 드롭] {len(paths)}개 항목(파일/폴더) 감지됨")
-            self.add_paths(paths)
+            self.root.after(0, lambda: self._handle_dropped_paths(paths))
+
+    def _handle_dropped_paths(self, paths: list[str]):
+        self.log(f"[드래그 앤 드롭] {len(paths)}개 항목(파일/폴더) 감지됨")
+        self.add_paths(paths)
 
     def add_paths(self, paths: list[str]):
         """주어진 파일 또는 폴더 경로 목록을 정규화하여 중복 없이 목록에 추가합니다."""
@@ -346,6 +364,7 @@ class App:
 
         out_dir = Path(self.var_out.get())
         overwrite = self.var_overwrite.get()
+        skip_scanned = self.var_skip_scanned.get()
         targets = list(self.files)
 
         # 변환 엔진 모드 결정
@@ -374,6 +393,7 @@ class App:
                     out_dir=out_dir,
                     overwrite=overwrite,
                     engine=engine_mode,
+                    skip_scanned=skip_scanned,
                     progress_callback=_prog,
                     log_callback=_log_cb,
                 )
@@ -388,6 +408,10 @@ class App:
 def main():
     root = TkinterDnD.Tk() if _HAS_TKDND else tk.Tk()
     app = App(root)
+    if len(sys.argv) > 1:
+        initial_paths = [p.strip(' \t\r\n\'"') for p in sys.argv[1:] if p.strip(' \t\r\n\'"')]
+        if initial_paths:
+            app.add_paths(initial_paths)
     root.mainloop()
 
 

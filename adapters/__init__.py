@@ -58,8 +58,8 @@ def get_adapter_for_path(path_str: str, engine: str = "auto") -> BaseAdapter | N
         return None
 
     if engine == "auto":
-        # HWP, Office(Word/PPT), PDF 등 콘텐츠 중심 표 평탄화가 적용된 네이티브 어댑터 우선
-        if ext in {".hwp", ".hwpx", ".docx", ".doc", ".rtf", ".pptx", ".ppt", ".pdf", ".xls", ".xlsx"}:
+        # HWP, Office(Word/PPT), PDF 및 텍스트 등 콘텐츠 중심 네이티브 어댑터 우선
+        if ext in {".hwp", ".hwpx", ".docx", ".doc", ".rtf", ".pptx", ".ppt", ".pdf", ".xls", ".xlsx", ".txt", ".md", ".markdown"}:
             for adapter in NATIVE_ADAPTERS:
                 if adapter.can_handle(ext):
                     return adapter

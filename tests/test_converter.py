@@ -243,7 +243,10 @@ def test_e2e_conversions():
         prs.save(str(pptx_file))
 
         # 6. PDF 파일 생성 (PyMuPDF fitz 활용)
-        import fitz
+        try:
+            import pymupdf as fitz
+        except ImportError:
+            import fitz
         pdoc = fitz.open()
         page = pdoc.new_page()
         page.insert_text((50, 72), "PDF 테스트 문서 제목", fontsize=18)
@@ -334,6 +337,55 @@ def test_markitdown_engine():
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
+def test_skip_scanned_option():
+    print("[7] 텍스트 레이어 없는 스캔 PDF 및 이미지 제외(skip_scanned) 옵션 검증 중...")
+    from PIL import Image
+    tmp_dir = Path(tempfile.mkdtemp(prefix="test_skip_scan_"))
+    out_dir = tmp_dir / "output"
+    report_dir = tmp_dir / "reports"
+
+    try:
+        # 1. 일반 텍스트 문서
+        txt_file = tmp_dir / "normal.txt"
+        txt_file.write_text("일반 텍스트 문서 내용입니다.", encoding="utf-8")
+
+        # 2. 이미지 문서 (OCR 대상)
+        img_file = tmp_dir / "scan.png"
+        Image.new("RGB", (100, 50), color=(255, 255, 255)).save(str(img_file))
+
+        # 3. 텍스트 레이어 없는 스캔형 PDF (글자 수 0)
+        try:
+            import pymupdf as fitz
+        except ImportError:
+            import fitz
+        pdoc = fitz.open()
+        pdoc.new_page()
+        pdf_file = tmp_dir / "scan_empty.pdf"
+        pdoc.save(str(pdf_file))
+        pdoc.close()
+
+        # skip_scanned=True 실행
+        report = convert_batch(
+            [txt_file, img_file, pdf_file],
+            out_dir=out_dir,
+            report_dir=report_dir,
+            skip_scanned=True,
+            overwrite=True,
+        )
+
+        assert report["counts"]["success"] == 1
+        assert report["counts"]["skip"] == 2
+        assert report["counts"]["failed"] == 0
+
+        # 결과 확인: normal.md는 생성되고, 스캔 문서 md는 생성되지 않아야 함
+        assert (out_dir / "normal.md").exists()
+        assert not (out_dir / "scan.md").exists()
+        assert not (out_dir / "scan_empty.md").exists()
+        print("  - skip_scanned 옵션 적용 시 스캔 문서 제외 및 일반 문서 정상 변환: 통과")
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+
+
 def run_all_tests() -> int:
     try:
         test_text_postprocessor()
@@ -343,7 +395,8 @@ def run_all_tests() -> int:
         test_markdown_formatter()
         test_e2e_conversions()
         test_markitdown_engine()
-        print("\n[성공] 모든 셀프 테스트 및 E2E 변환 검증을 성공적으로 통과했습니다! (7/7 PASSED)")
+        test_skip_scanned_option()
+        print("\n[성공] 모든 셀프 테스트 및 기능 검증을 성공적으로 통과했습니다! (ALL PASSED)")
         return 0
     except Exception as e:
         import traceback

@@ -2,7 +2,7 @@
 """adapters/ocr_adapter.py - 이미지 및 스캔 문서 OCR 변환 어댑터.
 
 - 지원 포맷: .png, .jpg, .jpeg, .bmp, .tiff, .tif, .webp
-- 독립적인 OCR Worker 프로세스를 활용하여 PaddleOCR 실행
+- 독립적인 OCR Worker 프로세스를 활용하여 RapidOCR(ONNX 기반 PP-OCR) 실행
 - 한글 및 영문 텍스트 인식, OCR 신뢰도 계산 및 검토 플래그 산출
 """
 from __future__ import annotations
@@ -14,7 +14,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from adapters.base import BaseAdapter, ConversionResult
+from adapters.base import BaseAdapter, ConversionResult, ScannedDocumentSkipped
 from core.config import get_ocr_python
 from core.text_cleaner import tidy
 
@@ -76,7 +76,10 @@ class OcrAdapter(BaseAdapter):
                 except Exception:
                     pass
 
-    def convert(self, path: Path, session: Any = None) -> ConversionResult:
+    def convert(self, path: Path, session: Any = None, skip_scanned: bool = False, **kwargs) -> ConversionResult:
+        if skip_scanned:
+            raise ScannedDocumentSkipped(f"스캔/이미지 문서 ({path.name}) - 변환 제외")
+
         res_list = self.perform_ocr_batch([path])
         if not res_list:
             raise RuntimeError("OCR 결과를 수신하지 못했습니다.")

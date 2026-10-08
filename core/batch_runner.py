@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Callable
 
 from adapters import get_adapter_for_path
-from adapters.base import ConversionResult
+from adapters.base import ConversionResult, ScannedDocumentSkipped
 from core.com_session import ComSession
 from core.config import DEFAULT_OUT_DIR, DEFAULT_REPORT_DIR, SUPPORTED_EXTENSIONS
 from core.frontmatter_builder import (
@@ -112,6 +112,7 @@ def convert_one_file(
     session: ComSession | None = None,
     overwrite: bool = False,
     engine: str = "auto",
+    skip_scanned: bool = False,
 ) -> tuple[str, Path, dict]:
     """단일 파일을 변환하여 (상태, 결과경로, 상세메타) 를 반환합니다."""
     ext = src.suffix.lower()
@@ -124,12 +125,23 @@ def convert_one_file(
     if already_done and not overwrite:
         return "skip", dst, {"source": str(src), "target": str(dst), "reason": "이미 변환됨"}
 
+    # 스캔/이미지 확장자 사전 제외 옵션
+    if skip_scanned and SUPPORTED_EXTENSIONS.get(ext) == "image":
+        return "skip", dst, {"source": str(src), "target": str(dst), "reason": "스캔/이미지 문서 제외 (OCR 생략)"}
+
     mtime = src.stat().st_mtime
     doc_id = generate_doc_id(str(src), mtime)
 
     # 1. 어댑터를 통한 변환 수행
     try:
-        res: ConversionResult = adapter.convert(src, session)
+        import inspect
+        sig = inspect.signature(adapter.convert)
+        if "skip_scanned" in sig.parameters:
+            res: ConversionResult = adapter.convert(src, session, skip_scanned=skip_scanned)
+        else:
+            res: ConversionResult = adapter.convert(src, session)
+    except ScannedDocumentSkipped as e:
+        return "skip", dst, {"source": str(src), "target": str(dst), "reason": str(e)}
     except Exception as e:
         err_msg = str(e)
         status = "failed"
@@ -241,6 +253,7 @@ def convert_batch(
     report_dir: Path | None = None,
     overwrite: bool = False,
     engine: str = "auto",
+    skip_scanned: bool = False,
     progress_callback: Callable[[int, int, str, str], None] | None = None,
     log_callback: Callable[[str], None] | None = None,
 ) -> dict:
@@ -277,14 +290,23 @@ def convert_batch(
 
             try:
                 status, dst, meta = convert_one_file(
-                    src, out_dir, session=session, overwrite=overwrite, engine=engine
+                    src,
+                    out_dir,
+                    session=session,
+                    overwrite=overwrite,
+                    engine=engine,
+                    skip_scanned=skip_scanned,
                 )
                 if status in counts:
                     counts[status] += 1
                 else:
                     counts["failed"] += 1
                 details.append(meta)
-                log(f"[{idx}/{len(file_paths)}] [{status.upper()}] {src.name} -> {dst.name}")
+                if status == "skip":
+                    reason_msg = f" (사유: {meta.get('reason', '')})" if meta.get("reason") else ""
+                    log(f"[{idx}/{len(file_paths)}] [SKIP] {src.name} -> {dst.name}{reason_msg}")
+                else:
+                    log(f"[{idx}/{len(file_paths)}] [{status.upper()}] {src.name} -> {dst.name}")
             except Exception as e:
                 counts["failed"] += 1
                 err_detail = {"source": str(src), "error": str(e), "status": "failed"}

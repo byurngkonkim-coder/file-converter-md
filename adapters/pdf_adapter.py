@@ -17,7 +17,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from adapters.base import BaseAdapter, ConversionResult
+from adapters.base import BaseAdapter, ConversionResult, ScannedDocumentSkipped
 from adapters.ocr_adapter import OcrAdapter
 from core.text_cleaner import rows_to_table, tidy
 from core.text_postprocessor import postprocess_markdown, rejoin_page_boundary_paragraphs
@@ -444,8 +444,11 @@ class PdfAdapter(BaseAdapter):
     def can_handle(self, ext: str) -> bool:
         return ext.lower() == ".pdf"
 
-    def convert(self, path: Path, session: Any = None) -> ConversionResult:
-        import fitz  # PyMuPDF
+    def convert(self, path: Path, session: Any = None, skip_scanned: bool = False, **kwargs) -> ConversionResult:
+        try:
+            import pymupdf as fitz
+        except ImportError:
+            import fitz
 
         abs_path = str(path.resolve())
         doc = fitz.open(abs_path)
@@ -466,6 +469,11 @@ class PdfAdapter(BaseAdapter):
             page_count = len(doc)
             # 페이지당 평균 글자 수가 20자 미만이면 스캔 PDF로 간주하고 OCR 수행
             is_scan = (total_chars / max(1, page_count)) < 20
+
+            if is_scan and skip_scanned:
+                raise ScannedDocumentSkipped(
+                    f"텍스트 레이어가 없는 스캔 PDF (글자 수: {total_chars}자, {page_count}페이지) - 변환 제외"
+                )
 
             if not is_scan and total_chars > 0:
                 # 텍스트 레이어 정상 추출 완료: 페이지 마커 없이 문맥 연속 결합
@@ -569,4 +577,11 @@ class PdfAdapter(BaseAdapter):
                 shutil.rmtree(tmp_dir, ignore_errors=True)
 
         finally:
-            doc.close()
+            if hasattr(doc, "is_closed"):
+                if not doc.is_closed:
+                    doc.close()
+            else:
+                try:
+                    doc.close()
+                except Exception:
+                    pass

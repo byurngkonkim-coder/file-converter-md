@@ -9,10 +9,8 @@ pywin32>=306
 pyyaml>=6.0
 charset-normalizer>=3.3.0
 Pillow>=10.0.0
-markitdown[pdf]>=0.1.8
+markitdown[all]>=0.1.8
 windnd>=1.0.7
 tkinterdnd2>=0.6.3
-
-# 선택 사항 (선택적 OCR)
-# paddlepaddle>=2.6.0
-# paddleocr>=2.7.0
+rapidocr>=3.0.0
+onnxruntime>=1.17.0

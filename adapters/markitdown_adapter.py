@@ -55,6 +55,8 @@ class MarkItDownAdapter(BaseAdapter):
         return self._engine
 
     def can_handle(self, ext: str) -> bool:
+        if not is_markitdown_available():
+            return False
         return ext.lower() in self.SUPPORTED_EXTS
 
     def convert(self, path: Path, session: Any = None) -> ConversionResult:

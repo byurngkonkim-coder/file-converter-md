@@ -79,6 +79,12 @@ def main():
         help="변환 엔진 선택 (auto: 스마트 자동, markitdown: Microsoft MarkItDown 최우선, native: 기존 내장 어댑터) [기본값: auto]",
     )
     parser.add_argument(
+        "--skip-scanned",
+        action="store_true",
+        default=False,
+        help="텍스트 레이어가 없는 스캔 PDF 및 이미지 문서 변환 제외 (OCR 생략)",
+    )
+    parser.add_argument(
         "--selftest",
         action="store_true",
         help="단위 테스트 및 시스템 무결성 검증 실행",
@@ -116,6 +122,7 @@ def main():
     print(f"[*] 변환 리포트 디렉토리: {report_dir}")
     print(f"[*] 변환 엔진: {args.engine}")
     print(f"[*] 기존 파일 덮어쓰기: {'예' if args.overwrite else '건너뛰기'}")
+    print(f"[*] 텍스트 없는 PDF/스캔 제외: {'예 (OCR 생략)' if args.skip_scanned else '아니오 (OCR 수행)'}")
     print("-" * 60)
 
     # 일괄 변환 실행
@@ -125,6 +132,7 @@ def main():
         report_dir=report_dir,
         overwrite=args.overwrite,
         engine=args.engine,
+        skip_scanned=args.skip_scanned,
     )
 
 
