@@ -38,9 +38,22 @@ class OcrEngineWorker:
 
         try:
             from rapidocr import RapidOCR
-            self._ocr = RapidOCR()
-        except Exception as e:
-            raise RuntimeError(f"RapidOCR 엔진 초기화 실패 (rapidocr 및 onnxruntime 필요): {e}")
+            from rapidocr.utils.typings import OCRVersion, LangRec, ModelType
+
+            params = {}
+            if self.lang and self.lang.lower() in ("korean", "kor", "ko"):
+                params = {
+                    "Rec.ocr_version": OCRVersion.PPOCRV5,
+                    "Rec.lang_type": LangRec.KOREAN,
+                    "Rec.model_type": ModelType.MOBILE,
+                }
+            self._ocr = RapidOCR(params=params if params else None)
+        except Exception:
+            try:
+                from rapidocr import RapidOCR
+                self._ocr = RapidOCR()
+            except Exception as e:
+                raise RuntimeError(f"RapidOCR 엔진 초기화 실패 (rapidocr 및 onnxruntime 필요): {e}")
 
     def run_image(self, img_path: str) -> tuple[list[dict], float, str]:
         """이미지 1장 OCR -> (lines, avg_score, confidence_level)"""

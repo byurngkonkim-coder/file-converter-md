@@ -15,10 +15,17 @@ if hasattr(sys.stdout, "reconfigure"):
 if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
-# 애플리케이션 기본 경로
-APP_DIR = Path(__file__).resolve().parent.parent
-DEFAULT_OUT_DIR = APP_DIR / "결과_MD"
-DEFAULT_REPORT_DIR = APP_DIR / "변환리포트"
+# 애플리케이션 및 프로젝트 루트 기본 경로
+_curr = Path(__file__).resolve().parent.parent
+if _curr.name.lower() in ("engine", "src", "_internal", "04_처리엔진", "04_엔진"):
+    PROJECT_ROOT = _curr.parent
+    APP_DIR = _curr
+else:
+    PROJECT_ROOT = _curr
+    APP_DIR = _curr
+
+DEFAULT_OUT_DIR = PROJECT_ROOT / "결과_MD"
+DEFAULT_REPORT_DIR = PROJECT_ROOT / "변환리포트"
 
 # 지원 파일 확장자 분류
 SUPPORTED_EXTENSIONS = {
@@ -55,9 +62,19 @@ SUPPORTED_EXTENSIONS = {
 }
 
 # OCR 지원 가상환경 파이썬 경로 후보들 (독립 worker 실행용)
+_BASE_DIR = PROJECT_ROOT
 OCR_PYTHON_CANDIDATES = [
-    Path(r"D:\백업\utility\MyOCR\venv\Scripts\python.exe"),
-    Path(sys.executable),
+    # 1. 파일형식변환기 자체 venv
+    _BASE_DIR / "venv" / "Scripts" / "pythonw.exe",
+    _BASE_DIR / "venv" / "Scripts" / "python.exe",
+    # 2. 동일 워크스페이스 내 MyOCR venv (존재 시)
+    _BASE_DIR.parent / "MyOCR" / "venv" / "Scripts" / "pythonw.exe",
+    _BASE_DIR.parent / "MyOCR" / "venv" / "Scripts" / "python.exe",
+    # 3. 동일 워크스페이스 내 01_OCR 엔진 venv (존재 시)
+    _BASE_DIR.parent / "01_OCR_스캔파일텍스트추출프로그램" / "04_처리엔진" / "venv" / "Scripts" / "pythonw.exe",
+    _BASE_DIR.parent / "01_OCR_스캔파일텍스트추출프로그램" / "04_처리엔진" / "venv" / "Scripts" / "python.exe",
+    # 4. 현재 실행 중인 Python 인터프리터 (GUI용 pythonw 우선)
+    Path(sys.executable).with_name("pythonw.exe") if Path(sys.executable).with_name("pythonw.exe").exists() else Path(sys.executable),
 ]
 
 

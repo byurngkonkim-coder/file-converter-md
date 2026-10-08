@@ -1,9 +1,23 @@
 @echo off
 setlocal
 cd /d "%~dp0"
-start "" pythonw -X utf8 gui.py %*
+
+set "TARGET=gui.py"
+if exist "engine\gui.py" set "TARGET=engine\gui.py"
+
+set "PY=python"
+if exist "venv\Scripts\python.exe" set "PY=venv\Scripts\python.exe"
+if exist "engine\venv\Scripts\python.exe" set "PY=engine\venv\Scripts\python.exe"
+
+if exist "venv\Scripts\pythonw.exe" (
+    start "" "venv\Scripts\pythonw.exe" -X utf8 %TARGET% %*
+) else if exist "engine\venv\Scripts\pythonw.exe" (
+    start "" "engine\venv\Scripts\pythonw.exe" -X utf8 %TARGET% %*
+) else (
+    start "" pythonw -X utf8 %TARGET% %*
+)
 if %ERRORLEVEL% NEQ 0 (
-    python -X utf8 gui.py %*
+    %PY% -X utf8 %TARGET% %*
     pause
 )
 endlocal

@@ -32,6 +32,15 @@ class OcrAdapter(BaseAdapter):
 
     def perform_ocr_batch(self, image_paths: list[Path], lang: str = "korean") -> list[dict]:
         """이미지 경로 목록을 OCR Worker 로 넘겨 텍스트와 신뢰도를 수집합니다."""
+        # 1. 현재 프로세스에서 직접 실행 가능한 경우 프로세스 생성 없이 즉시 실행 (창 팝업 원천 차단 및 고속 처리)
+        try:
+            from core.ocr_worker import run_ocr_on_images
+            import rapidocr
+            return run_ocr_on_images([str(p.resolve()) for p in image_paths], lang=lang)
+        except Exception:
+            pass
+
+        # 2. 독립 프로세스 실행 (콘솔 창 팝업 방지 플래그 적용)
         worker_script = Path(__file__).resolve().parent.parent / "core" / "ocr_worker.py"
         py_exe = get_ocr_python()
 
@@ -48,14 +57,23 @@ class OcrAdapter(BaseAdapter):
             "--lang", lang,
         ]
 
+        run_kwargs: dict[str, Any] = {
+            "capture_output": True,
+            "encoding": "utf-8",
+            "errors": "replace",
+            "check": True,
+        }
+
+        # Windows 환경에서 콘솔 창(검은색 CMD 팝업창) 완벽 차단
+        if sys.platform == "win32":
+            run_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+            startupinfo = subprocess.STARTUPINFO()
+            startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            startupinfo.wShowWindow = 0  # SW_HIDE
+            run_kwargs["startupinfo"] = startupinfo
+
         try:
-            res = subprocess.run(
-                cmd,
-                capture_output=True,
-                encoding="utf-8",
-                errors="replace",
-                check=True,
-            )
+            res = subprocess.run(cmd, **run_kwargs)
             output = res.stdout.strip()
             # JSON 부분만 파싱 (앞뒤 다른 로그 메시지가 있을 수 있으므로 방어적 추출)
             json_start = output.find("[")
