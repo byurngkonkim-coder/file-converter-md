@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -31,44 +32,64 @@ class OcrAdapter(BaseAdapter):
         return ext.lower() in {".png", ".jpg", ".jpeg", ".bmp", ".tiff", ".tif", ".webp"}
 
     def perform_ocr_batch(self, image_paths: list[Path], lang: str = "korean") -> list[dict]:
-        """이미지 경로 목록을 OCR Worker 로 넘겨 텍스트와 신뢰도를 수집합니다."""
+        """이미지 경로 목록을 OCR Worker 로 넘겨 텍스트와 신뢰도를 수집합니다. (후보 Python 순차 폴백)"""
         worker_script = Path(__file__).resolve().parent.parent / "core" / "ocr_worker.py"
-        py_exe = get_ocr_python()
+        from core.config import get_ocr_python_candidates, get_safe_temp_dir
 
-        # 경로 목록 임시 JSON 작성
-        with tempfile.NamedTemporaryFile("w", encoding="utf-8", suffix=".json", delete=False) as f:
-            json_file = f.name
+        safe_temp = get_safe_temp_dir()
+        temp_json_path = safe_temp / f"ocr_batch_{os.getpid()}_{id(image_paths)}.json"
+        with open(temp_json_path, "w", encoding="utf-8") as f:
             json.dump([str(p.resolve()) for p in image_paths], f, ensure_ascii=False)
+        json_file = str(temp_json_path)
 
-        cmd = [
-            py_exe,
-            "-X", "utf8",
-            str(worker_script),
-            "--json-input", json_file,
-            "--lang", lang,
-        ]
+        # 사용 가능한 후보 Python 목록 준비
+        cands = [str(c.resolve()) for c in get_ocr_python_candidates() if c and c.exists()]
+        if sys.executable not in cands:
+            cands.append(sys.executable)
 
+        last_error = None
         try:
-            res = subprocess.run(
-                cmd,
-                capture_output=True,
-                encoding="utf-8",
-                errors="replace",
-                check=True,
-            )
-            output = res.stdout.strip()
-            # JSON 부분만 파싱 (앞뒤 다른 로그 메시지가 있을 수 있으므로 방어적 추출)
-            json_start = output.find("[")
-            json_end = output.rfind("]")
-            if json_start != -1 and json_end != -1:
-                json_str = output[json_start : json_end + 1]
-                data = json.loads(json_str)
-            else:
-                data = json.loads(output)
-            return data
-        except Exception as e:
-            err_msg = f"OCR 처리 중 오류 발생: {e}"
-            return [{"error": err_msg, "text": "", "avg_score": 0.0, "confidence": "unknown"}]
+            for py_exe in cands:
+                cmd = [
+                    py_exe,
+                    "-X", "utf8",
+                    str(worker_script),
+                    "--json-input", json_file,
+                    "--lang", lang,
+                ]
+                try:
+                    res = subprocess.run(
+                        cmd,
+                        capture_output=True,
+                        encoding="utf-8",
+                        errors="replace",
+                        timeout=60,
+                    )
+                    if res.returncode != 0:
+                        last_error = f"Exit code {res.returncode}: {res.stderr.strip()[:200]}"
+                        continue
+
+                    output = res.stdout.strip()
+                    json_start = output.find("[")
+                    json_end = output.rfind("]")
+                    if json_start != -1 and json_end != -1:
+                        json_str = output[json_start : json_end + 1]
+                        data = json.loads(json_str)
+                    else:
+                        data = json.loads(output)
+
+                    # 결과 내에 치명적 에러가 없으면 채택
+                    if data and not all(d.get("error") for d in data):
+                        return data
+                    elif data and data[0].get("error"):
+                        last_error = data[0].get("error")
+                        continue
+                    return data
+                except Exception as e:
+                    last_error = str(e)
+                    continue
+
+            return [{"error": f"OCR 처리 실패 (모든 Python 후보 시도 완료): {last_error}", "text": "", "avg_score": 0.0, "confidence": "unknown"}]
         finally:
             if Path(json_file).exists():
                 try:

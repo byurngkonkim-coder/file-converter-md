@@ -150,3 +150,32 @@ errors: []
 - **손상된 파일**: `corrupted_file` 상태로 기록됩니다.
 - **저품질 OCR**: `partial` 상태 및 `review_required: true`로 기록되어 추후 원본 대조가 가능합니다.
 - 오류가 발생해도 나머지 파일의 배치는 중단 없이 계속 진행되며, 결과 폴더의 `_conversion_report.json`과 `_conversion_summary.md`에 모든 내역이 집계됩니다.
+
+---
+
+## 6. USB 이동식 배포 및 경로 무결성 보장 (Portable USB Deployment)
+
+본 프로그램은 USB 메모리 또는 외장 하드 드라이브에 담겨 서로 다른 PC 환경(드라이브 문자 변경: `D:` -> `E:`, `F:`, `Z:` 등)에 배포되더라도 시스템이 깨지지 않도록 다음과 같은 전방위적 보완 조치가 적용되어 있습니다:
+
+1. **드라이브 문자 독립적 경로 매칭 (`core/batch_runner.py`)**:
+   - 기존에 변환된 마크다운의 `source_path`와 현재 대상 파일을 비교할 때, 드라이브 문자를 제외한 경로를 스마트 비교(`is_same_source`)합니다.
+   - PC 이동으로 드라이브 문자가 달라져도 동일 파일로 정확히 감지되어 불필요한 `파일명 (1).md` 중복 생성을 방지하고 건너뛰기/덮어쓰기 정책을 준수합니다.
+   - Front Matter에 `source_rel_path` 상대 경로를 함께 기록하여 USB 내에서 언제든 원본을 추적할 수 있습니다.
+
+2. **포터블 환경 다중 Python 자동 감지 런처 (`run_converter.bat`, `run_gui.bat`)**:
+   - 100% 순수 ASCII 래퍼 및 `pushd "%~dp0"`를 적용하여 UNC 네트워크 경로 및 cmd.exe 한글 인코딩 버그를 원천 차단했습니다.
+   - 대상 PC에 Python이 PATH에 없더라도:
+     - USB 내 로컬 가상환경/임베디드 파이썬 (`venv`, `.venv`, `python`, `Python3*`) 1순위 자동 탐색
+     - 시스템 `python` 2순위 탐색
+     - Windows Python Launcher (`py -3` / `pyw -3`) 3순위 자동 탐색
+     - LocalAppData 사용자 설치 경로 4순위 자동 탐색
+     - Python 미설치 시 즉시 꺼지지 않고 명확한 안내 후 대기(`pause`)합니다.
+
+3. **다중 엔진 OCR 하이브리드 지원 및 자립형 구동 (`core/ocr_worker.py`)**:
+   - 무거운 외부 라이브러리 없이도 Windows 10/11 시스템 내장 `winrt` (Windows Media OCR) 네이티브 지원으로 USB만 꽂으면 즉시 고속 한글/영문 OCR 구동 가능.
+   - `RapidOCR`(ONNX) 및 `PaddleOCR`와의 멀티 호환으로 다양한 가상환경에 유연하게 대응합니다.
+
+4. **유니코드 NFC 정규화 및 GUI 동적 폴백 (`core/batch_runner.py`, `gui.py`)**:
+   - Mac/Windows 간 파일 복사 시 발생하는 한글 자모 분리 현상(NFD)을 NFC로 자동 정규화합니다.
+   - 이전 PC의 드라이브 경로가 남아있더라도 접근 불가 시 현재 USB의 `APP_DIR / "결과_MD"`로 자동 안전 전환됩니다.
+
