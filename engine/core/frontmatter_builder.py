@@ -68,6 +68,7 @@ def build_frontmatter(
     summary: str | None = None,
     source_file: str,
     source_path: str,
+    source_rel_path: str | None = None,
     source_type: str,
     category: str | None = None,
     doc_category: str = "일반 지식 & 도구",
@@ -136,6 +137,8 @@ def build_frontmatter(
     lines.append(f'summary: {json.dumps(final_summary, ensure_ascii=False)}')
     lines.append(f'source: {json.dumps(source_file, ensure_ascii=False)}')
     lines.append(f'source_path: {json.dumps(src_posix, ensure_ascii=False)}')
+    if source_rel_path:
+        lines.append(f'source_rel_path: {json.dumps(Path(source_rel_path).as_posix(), ensure_ascii=False)}')
     lines.append(f'source_type: "{source_type}"')
     lines.append(f'created: {c_date}')
     lines.append(f'converted: {conv_date}')

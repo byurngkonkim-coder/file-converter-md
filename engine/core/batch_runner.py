@@ -11,6 +11,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import os
+import re
 import sys
 from pathlib import Path
 from typing import Callable
@@ -43,13 +44,26 @@ if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 
+import unicodedata
+from core.config import APP_DIR, DEFAULT_OUT_DIR, DEFAULT_REPORT_DIR, SUPPORTED_EXTENSIONS
+
+
 def normalize_path(path_str: str) -> Path:
-    """윈도우 경로 문자열의 따옴표, 공백, 역슬래시 이스케이프를 정규화하여 절대경로 Path 객체로 반환합니다."""
+    """윈도우 경로 문자열의 따옴표, 공백, 역슬래시 및 유니코드를 정규화하여 절대경로 Path 객체로 반환합니다.
+
+    - 유니코드 NFC 정규화로 맥/윈도우 간 한글 자모 분리 현상 방지
+    - 윈도우 8.3 축약 경로(Short path) 및 심볼릭 링크 자동 해결
+    """
     clean = path_str.strip(" \t\r\n'\"")
     # 연속된 역슬래시나 윈도우 따옴표 이스케이프 정리
     clean = clean.replace('\\"', '"').strip('"')
+    clean = unicodedata.normalize("NFC", clean)
     abs_str = os.path.abspath(clean)
-    return Path(abs_str)
+    try:
+        real_str = os.path.realpath(abs_str)
+        return Path(real_str)
+    except Exception:
+        return Path(abs_str)
 
 
 def collect_files(inputs: list[str | Path], recursive: bool = True) -> list[Path]:
@@ -83,9 +97,66 @@ def collect_files(inputs: list[str | Path], recursive: bool = True) -> list[Path
     return sorted(collected, key=lambda f: (f.suffix.lower(), f.name.lower()))
 
 
+def compute_relative_path(src: Path) -> str | None:
+    """파일이 애플리케이션 또는 USB 상위 경로 내에 위치할 경우 이동식 상대 경로를 산출합니다."""
+    try:
+        src_resolved = src.resolve()
+        # 1. APP_DIR 기준 상대경로
+        try:
+            return src_resolved.relative_to(APP_DIR).as_posix()
+        except ValueError:
+            pass
+        # 2. APP_DIR 상위 기준 상대경로 (동일 USB 루트 등)
+        try:
+            return src_resolved.relative_to(APP_DIR.parent).as_posix()
+        except ValueError:
+            pass
+    except Exception:
+        pass
+    return None
+
+
+def is_same_source(fm: dict | None, src: Path) -> bool:
+    """프론트매터의 출처 정보와 대상 파일이 동일한지 판별합니다. (USB 드라이브 문자 변경 대응)"""
+    if not fm:
+        return False
+
+    src_posix = src.resolve().as_posix()
+    fm_src_path = str(fm.get("source_path", "")).replace("\\", "/")
+
+    # 1. 절대경로 완전 일치
+    if fm_src_path.lower() == src_posix.lower():
+        return True
+
+    # 2. 상대 경로 일치 (source_rel_path)
+    fm_rel = fm.get("source_rel_path")
+    if fm_rel:
+        curr_rel = compute_relative_path(src)
+        if curr_rel and curr_rel.lower() == str(fm_rel).lower():
+            return True
+
+    # 3. 드라이브 문자만 다른 동일 경로인지 검사 (USB 마운트 드라이브 D: -> E: 대응)
+    def _strip_drive(p: str) -> str:
+        p = unicodedata.normalize("NFC", p).strip()
+        # Windows 드라이브 문자 (예: C:, D:, E:) 제거
+        p_no_drive = re.sub(r"^[a-zA-Z]:", "", p)
+        return p_no_drive.strip("/\\").replace("\\", "/").lower()
+
+    if fm_src_path and _strip_drive(fm_src_path) == _strip_drive(src_posix):
+        return True
+
+    # 4. 파일명 일치
+    fm_file = fm.get("source_file") or fm.get("source")
+    if fm_file and str(fm_file).lower() == src.name.lower():
+        # 파일명이 같고 드라이브를 뗀 부모 디렉토리명이 일치하는 경우
+        if fm_src_path and Path(fm_src_path).parent.name.lower() == src.parent.name.lower():
+            return True
+
+    return False
+
+
 def unique_target_path(out_dir: Path, src: Path) -> tuple[Path, bool]:
-    """출력 디렉토리 내의 중복되지 않는 고유 Markdown 파일 경로 및 기변환 여부를 반환합니다."""
-    src_posix = src.as_posix()
+    """출력 디렉토리 내의 중복되지 않는 고유 Markdown 파일 경로 및 기변환 여부를 반환합니다. (USB 이동식 호환)"""
     out_dir.mkdir(parents=True, exist_ok=True)
 
     for n in range(1, 1000):
@@ -93,12 +164,12 @@ def unique_target_path(out_dir: Path, src: Path) -> tuple[Path, bool]:
         if not dst.exists():
             return dst, False
 
-        # 이미 존재하는 파일의 출처 확인
+        # 이미 존재하는 파일의 출처 확인 (USB 드라이브 문자 변경 대응)
         try:
             with open(dst, "r", encoding="utf-8", errors="ignore") as f:
                 head = f.read(2048)
             fm, _ = split_frontmatter(head)
-            if fm and fm.get("source_path") == src_posix:
+            if fm and is_same_source(fm, src):
                 return dst, True
         except Exception:
             pass
@@ -131,6 +202,7 @@ def convert_one_file(
 
     mtime = src.stat().st_mtime
     doc_id = generate_doc_id(str(src), mtime)
+    rel_path = compute_relative_path(src)
 
     # 1. 어댑터를 통한 변환 수행
     try:
@@ -157,6 +229,7 @@ def convert_one_file(
             description="변환 실패 문서",
             source_file=src.name,
             source_path=str(src),
+            source_rel_path=rel_path,
             source_type=SUPPORTED_EXTENSIONS.get(ext, ext.lstrip(".")),
             conversion_method="none",
             converted_from=ext,
@@ -191,6 +264,7 @@ def convert_one_file(
         summary=summary,
         source_file=src.name,
         source_path=str(src),
+        source_rel_path=rel_path,
         source_type=source_type,
         category=category,
         doc_category=category,

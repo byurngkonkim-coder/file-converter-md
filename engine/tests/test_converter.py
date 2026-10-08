@@ -386,6 +386,48 @@ def test_skip_scanned_option():
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
+def test_portable_deployment_and_path_safety():
+    print("[8] USB 배포 및 경로 이식성(Portable Path Safety) 검증 중...")
+    import unicodedata
+    from core.batch_runner import is_same_source, normalize_path
+    from core.config import get_ocr_python_candidates, get_safe_temp_dir
+
+    # 1. 드라이브 문자(D: -> E:) 변경 시 동일 출처 인식 검증
+    fm_sample = {
+        "title": "테스트",
+        "source_file": "2026_업무보고.docx",
+        "source_path": "D:/usb_drive/docs/2026_업무보고.docx",
+    }
+    src_on_e_drive = Path("E:/usb_drive/docs/2026_업무보고.docx")
+    assert is_same_source(fm_sample, src_on_e_drive), "드라이브 문자 변경 시 출처 매칭 실패"
+    print("  - USB 드라이브 문자(D: -> E:) 변경 시 기변환 파일 매칭: 통과")
+
+    # 2. 상대 경로 (source_rel_path) 인식 검증
+    fm_with_rel = {
+        "title": "테스트",
+        "source_file": "guide.docx",
+        "source_path": "Z:/some/path/guide.docx",
+        "source_rel_path": "manuals/guide.docx",
+    }
+    src_rel_match = APP_DIR / "manuals" / "guide.docx"
+    assert is_same_source(fm_with_rel, src_rel_match), "상대 경로 출처 매칭 실패"
+    print("  - 상대 경로(source_rel_path) 기반 출처 매칭: 통과")
+
+    # 3. 맥 OS NFD 자모 분리 -> 윈도우 NFC 정규화 검증
+    nfd_name = unicodedata.normalize("NFD", "한글문서.docx")
+    normalized_p = normalize_path(f'"{nfd_name}"')
+    assert unicodedata.is_normalized("NFC", normalized_p.name), "유니코드 NFC 정규화 실패"
+    print("  - 유니코드 NFD/NFC 및 따옴표 경로 정규화: 통과")
+
+    # 4. 안전 임시 폴더 및 Python 후보 목록 무결성 검증
+    safe_temp = get_safe_temp_dir()
+    assert safe_temp.exists() and safe_temp.is_dir(), "안전 임시 폴더 유효성 실패"
+    py_cands = get_ocr_python_candidates()
+    assert len(py_cands) > 0, "Python 후보 목록 비어있음"
+    assert Path(sys.executable) in py_cands, "현재 인터프리터가 후보에 누락됨"
+    print("  - 안전 임시 폴더 및 포터블 Python 후보 동적 탐색: 통과")
+
+
 def run_all_tests() -> int:
     try:
         test_text_postprocessor()
@@ -396,6 +438,7 @@ def run_all_tests() -> int:
         test_e2e_conversions()
         test_markitdown_engine()
         test_skip_scanned_option()
+        test_portable_deployment_and_path_safety()
         print("\n[성공] 모든 셀프 테스트 및 기능 검증을 성공적으로 통과했습니다! (ALL PASSED)")
         return 0
     except Exception as e:

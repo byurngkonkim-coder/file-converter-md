@@ -346,14 +346,24 @@ class App:
             self.var_out.set(d)
 
     def open_out_dir(self):
-        p = Path(self.var_out.get())
-        p.mkdir(parents=True, exist_ok=True)
-        os.startfile(str(p))
+        try:
+            p = Path(self.var_out.get())
+            p.mkdir(parents=True, exist_ok=True)
+            os.startfile(str(p))
+        except Exception:
+            # USB 드라이브 문자 변경 등으로 접근 실패 시 기본 로컬 폴더로 안전 복구
+            fallback = DEFAULT_OUT_DIR
+            fallback.mkdir(parents=True, exist_ok=True)
+            self.var_out.set(str(fallback.resolve()))
+            os.startfile(str(fallback))
 
     def open_report_dir(self):
-        p = DEFAULT_REPORT_DIR
-        p.mkdir(parents=True, exist_ok=True)
-        os.startfile(str(p))
+        try:
+            p = DEFAULT_REPORT_DIR
+            p.mkdir(parents=True, exist_ok=True)
+            os.startfile(str(p))
+        except Exception as e:
+            messagebox.showwarning("폴더 열기", f"리포트 폴더를 열 수 없습니다: {e}")
 
     def start_conversion(self):
         if self.is_running:
@@ -362,7 +372,15 @@ class App:
             messagebox.showwarning("파일 없음", "변환할 파일이 목록에 없습니다.")
             return
 
-        out_dir = Path(self.var_out.get())
+        out_raw = self.var_out.get()
+        try:
+            out_dir = Path(out_raw)
+            out_dir.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            out_dir = DEFAULT_OUT_DIR
+            out_dir.mkdir(parents=True, exist_ok=True)
+            self.var_out.set(str(out_dir.resolve()))
+            self.log(f"[안내] 출력 경로에 접근할 수 없어 현재 폴더({out_dir.name})로 자동 전환되었습니다.")
         overwrite = self.var_overwrite.get()
         skip_scanned = self.var_skip_scanned.get()
         targets = list(self.files)

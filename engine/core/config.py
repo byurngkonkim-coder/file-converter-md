@@ -61,26 +61,84 @@ SUPPORTED_EXTENSIONS = {
     ".webp": "image",
 }
 
-# OCR 지원 가상환경 파이썬 경로 후보들 (독립 worker 실행용)
-_BASE_DIR = PROJECT_ROOT
-OCR_PYTHON_CANDIDATES = [
-    # 1. 파일형식변환기 자체 venv
-    _BASE_DIR / "venv" / "Scripts" / "pythonw.exe",
-    _BASE_DIR / "venv" / "Scripts" / "python.exe",
-    # 2. 동일 워크스페이스 내 MyOCR venv (존재 시)
-    _BASE_DIR.parent / "MyOCR" / "venv" / "Scripts" / "pythonw.exe",
-    _BASE_DIR.parent / "MyOCR" / "venv" / "Scripts" / "python.exe",
-    # 3. 동일 워크스페이스 내 01_OCR 엔진 venv (존재 시)
-    _BASE_DIR.parent / "01_OCR_스캔파일텍스트추출프로그램" / "04_처리엔진" / "venv" / "Scripts" / "pythonw.exe",
-    _BASE_DIR.parent / "01_OCR_스캔파일텍스트추출프로그램" / "04_처리엔진" / "venv" / "Scripts" / "python.exe",
-    # 4. 현재 실행 중인 Python 인터프리터 (GUI용 pythonw 우선)
-    Path(sys.executable).with_name("pythonw.exe") if Path(sys.executable).with_name("pythonw.exe").exists() else Path(sys.executable),
-]
+# 포터블 배포 및 로컬 실행 환경을 위한 OCR 및 보조 Python 실행 파일 경로 동적 탐색
+def get_ocr_python_candidates() -> list[Path]:
+    """USB 및 다양한 실행 환경에 유연하게 대응하는 Python 실행 파일 후보 목록을 반환합니다."""
+    candidates: list[Path] = []
+
+    # 1. 현재 실행 중인 파이썬 인터프리터 (GUI용 pythonw 우선)
+    if sys.executable:
+        pyw = Path(sys.executable).with_name("pythonw.exe")
+        if pyw.exists():
+            candidates.append(pyw)
+        candidates.append(Path(sys.executable))
+
+    # 2. 환경 변수 지정
+    env_py = os.environ.get("OCR_PYTHON") or os.environ.get("PORTABLE_PYTHON")
+    if env_py:
+        candidates.append(Path(env_py.strip(' \t\r\n\'"')))
+
+    # 3. 로컬 및 엔진 폴더 내부의 가상환경
+    candidates.extend([
+        APP_DIR / "venv" / "Scripts" / "pythonw.exe",
+        APP_DIR / "venv" / "Scripts" / "python.exe",
+        PROJECT_ROOT / "venv" / "Scripts" / "pythonw.exe",
+        PROJECT_ROOT / "venv" / "Scripts" / "python.exe",
+        APP_DIR / ".venv" / "Scripts" / "python.exe",
+        APP_DIR / "python" / "python.exe",
+        APP_DIR / "Python311" / "python.exe",
+        APP_DIR / "Python312" / "python.exe",
+        APP_DIR / "Python310" / "python.exe",
+    ])
+
+    # 4. 인접 폴더 내 MyOCR 및 01_OCR 가상환경 (상대 경로 탐색)
+    candidates.extend([
+        PROJECT_ROOT.parent / "MyOCR" / "engine" / "venv" / "Scripts" / "pythonw.exe",
+        PROJECT_ROOT.parent / "MyOCR" / "engine" / "venv" / "Scripts" / "python.exe",
+        PROJECT_ROOT.parent / "MyOCR" / "venv" / "Scripts" / "pythonw.exe",
+        PROJECT_ROOT.parent / "MyOCR" / "venv" / "Scripts" / "python.exe",
+        PROJECT_ROOT.parent / "01_OCR_스캔파일텍스트추출프로그램" / "engine" / "venv" / "Scripts" / "pythonw.exe",
+        PROJECT_ROOT.parent / "01_OCR_스캔파일텍스트추출프로그램" / "engine" / "venv" / "Scripts" / "python.exe",
+        PROJECT_ROOT.parent / "01_OCR_스캔파일텍스트추출프로그램" / "04_처리엔진" / "venv" / "Scripts" / "pythonw.exe",
+        PROJECT_ROOT.parent / "01_OCR_스캔파일텍스트추출프로그램" / "04_처리엔진" / "venv" / "Scripts" / "python.exe",
+    ])
+
+    # 5. 현재 실행 중인 드라이브 루트 기준 백업 유틸리티 경로 탐색 (USB 마운트 대응)
+    drive = APP_DIR.drive
+    if drive:
+        candidates.append(Path(f"{drive}\\백업\\utility\\MyOCR\\venv\\Scripts\\python.exe"))
+
+    # 6. 시스템 PATH 상의 python
+    import shutil
+    which_py = shutil.which("python")
+    if which_py:
+        candidates.append(Path(which_py))
+
+    return candidates
 
 
 def get_ocr_python() -> str:
-    """사용 가능한 OCR Python 실행 파일 경로를 반환합니다."""
-    for cand in OCR_PYTHON_CANDIDATES:
-        if cand.exists():
-            return str(cand)
+    """사용 가능한 OCR Python 실행 파일 경로를 반환합니다. (USB 이동 시에도 동적 탐색)"""
+    for cand in get_ocr_python_candidates():
+        try:
+            if cand and cand.exists() and cand.is_file():
+                return str(cand.resolve())
+        except Exception:
+            continue
     return sys.executable
+
+
+def get_safe_temp_dir() -> Path:
+    """시스템 임시 디렉토리 쓰기 권한이 제한된 폐쇄망/공용 PC 환경을 대비한 안전 임시 폴더를 반환합니다."""
+    import tempfile
+    try:
+        sys_temp = Path(tempfile.gettempdir())
+        test_file = sys_temp / f".test_perm_{os.getpid()}.tmp"
+        test_file.write_text("ok", encoding="utf-8")
+        test_file.unlink(missing_ok=True)
+        return sys_temp
+    except Exception:
+        # 시스템 temp 접근 실패 시 로컬 scratch 폴더로 폴백
+        local_scratch = APP_DIR / "scratch" / "temp"
+        local_scratch.mkdir(parents=True, exist_ok=True)
+        return local_scratch
