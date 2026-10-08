@@ -1,0 +1,18 @@
+# 통합 문서 변환기 (파일형식변환기_MD) 의존성 목록
+PyMuPDF>=1.24.0
+python-docx>=1.1.0
+python-pptx>=1.0.0
+openpyxl>=3.1.0
+mammoth>=1.8.0
+markdownify>=0.13.0
+pywin32>=306
+pyyaml>=6.0
+charset-normalizer>=3.3.0
+Pillow>=10.0.0
+markitdown[pdf]>=0.1.8
+windnd>=1.0.7
+tkinterdnd2>=0.6.3
+
+# 선택 사항 (선택적 OCR)
+# paddlepaddle>=2.6.0
+# paddleocr>=2.7.0
