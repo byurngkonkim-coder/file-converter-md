@@ -204,6 +204,9 @@ def extract_pdf_page(page: Any) -> str:
 
     tab_rects = []
     page_elements = []
+    # 글자 대응표가 깨진 글꼴(DBR 표·제목 등)의 줄은 이미지로 다시 읽어 고친다 — 표 칸·본문 블록 모두
+    from core.garbled_font import page_fixer
+    fix, _ = page_fixer(page)
 
     # 1. 표(find_tables) 감지 및 메모장 서식 평탄화
     try:
@@ -212,6 +215,7 @@ def extract_pdf_page(page: Any) -> str:
             tab_rects.append(tab.bbox)
             grid = tab.extract()
             if grid:
+                grid = [[fix(c) if isinstance(c, str) else c for c in row] for row in grid]
                 t_str = rows_to_table(grid)
                 if t_str:
                     bx0, by0, bx1, by1 = tab.bbox
@@ -235,7 +239,7 @@ def extract_pdf_page(page: Any) -> str:
     for b in raw_blocks:
         if len(b) >= 7 and b[6] == 1:
             continue  # 이미지 제외
-        bx0, by0, bx1, by1, btext = b[0], b[1], b[2], b[3], b[4].strip()
+        bx0, by0, bx1, by1, btext = b[0], b[1], b[2], b[3], fix(b[4]).strip()
         if not btext:
             continue
         if is_header_footer_noise(btext, by0, by1, page_h):
