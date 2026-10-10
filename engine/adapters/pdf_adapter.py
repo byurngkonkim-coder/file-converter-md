@@ -60,10 +60,34 @@ def is_header_footer_noise(text: str, y0: float, y1: float, page_h: float) -> bo
     return False
 
 
+# 블록 잇기 기준 — 앞 블록의 마지막 줄이 단에서 흔한 줄 길이(중앙값)의 이만큼 이상 찼을 때만 다음 블록과 잇는다.
+# 실측(2026-10-10, 결과_MD 표본 25권): 세로 간격만 보고 이어 붙여 짧은 줄로 끝나는 색인·차례 항목, 표 칸,
+# 그림 라벨, 도서 광고('양장/12.000원'), 제목('Lead the Field')이 다음 본문에 붙었다. MyOCR text_refiner 와 같은 비율
+_FULL_LINE_RATIO = 0.75
+# 단어 첫머리에 올 수 없는 어미·조사 — 다음 블록이 이걸로 시작하면 앞 줄이 짧아도 한 단어가 잘린 것이라 잇는다
+# (좁은 단: '…우월적 지위' ⟨블록 경계⟩ '를 확보했다'). '이·가·서·만·도' 는 독립 단어로도 쓰여 제외
+_BOUND_START = {"며", "으며", "니", "으니", "니까", "지만", "면서", "도록", "거나", "는데", "은데", "으면",
+                "는", "은", "을", "를", "에", "의", "에서", "에게", "으로", "로", "께서",
+                "었다", "았다", "였다", "했다", "한다", "된다", "합니다", "입니다", "습니다", "니다"}
+
+
+# 색인 항목: 낱말 뒤에 쪽번호(들)로 끝나는 줄 — 'teams, 141, 157-158'·'프레더릭 테일러 518, 627'
+_INDEX_ENTRY_RE = re.compile(r"[가-힣A-Za-z)]\s*,?\s+\d{1,4}(?:[-–~]\d{1,4})?(?:\s*,\s*\d{1,4}(?:[-–~]\d{1,4})?)*\s*$")
+
+
+def _starts_bound(text: str) -> bool:
+    m = re.match(r"[가-힣]+", text.strip())
+    return bool(m) and m.group(0) in _BOUND_START
+
+
 def group_column_blocks_into_paragraphs(col_blocks: list[dict]) -> list[str]:
     """컬럼 내 연속된 줄(Line) 블록들을 자연스러운 단락(Paragraph)으로 병합."""
     if not col_blocks:
         return []
+
+    lens = sorted(len(l.strip()) for b in col_blocks if not b.get("is_table")
+                  for l in b["text"].splitlines() if l.strip())
+    full = lens[len(lens) // 2] * _FULL_LINE_RATIO if lens else 0
 
     paragraphs = []
     curr_lines = []
@@ -94,9 +118,22 @@ def group_column_blocks_into_paragraphs(col_blocks: list[dict]) -> list[str]:
         is_bullet = btext.startswith(("-", "•", "▶", "※", "*", "①", "②", "③", "1.", "2.", "3.", "4.", "5."))
         prev_ended = any(prev_text.endswith(ch) for ch in (".", "!", "?", "…", ":"))
 
-        if is_bullet or (prev_ended and y_gap > 8) or y_gap > 16:
+        prev_last = prev_text.splitlines()[-1].strip()
+        bound = re.search(r"[가-힣]$", prev_last) is not None and _starts_bound(btext)
+        short_end = len(prev_last) < full and not bound   # 짧은 줄로 끝남 = 제목·항목·표 칸·라벨
+        # 앞 문단이 끝났는데(마침표 등) 이 블록이 문장부호 없이 끝나는 짧은 한 줄 = 제목·항목 — 간격이 좁아도 떼어 둔다.
+        # 앞 문단이 안 끝났으면 떼지 않는다: 문단 마지막 줄이 OCR 로 마침표를 잃은 경우('…사람들이 잘' ‖ '이해하지 못한다')
+        short_label = (prev_ended and "\n" not in btext and len(btext) < full and not bound
+                       and not any(btext.endswith(ch) for ch in (".", "!", "?", "…", ":", "”", "\"")))
+
+        # 색인 항목끼리('teams, 141, 157-158' ‖ 'Ten Goal Exercise, 68, 180') — 단 전체가 짧아 길이로는 못 가른다
+        index_pair = bool(_INDEX_ENTRY_RE.search(prev_last) and _INDEX_ENTRY_RE.search(btext.splitlines()[0]))
+
+        if is_bullet or (prev_ended and y_gap > 8) or y_gap > 16 or short_end or short_label or index_pair:
             paragraphs.append(" ".join(curr_lines))
             curr_lines = [btext]
+        elif bound:   # 끊긴 어미·조사 — 한 단어가 잘린 것이니 공백 없이 잇는다
+            curr_lines[-1] = curr_lines[-1].rstrip() + btext
         else:
             curr_lines.append(btext)
 
