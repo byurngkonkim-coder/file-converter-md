@@ -43,13 +43,14 @@ class OcrEngineWorker:
             from rapidocr import RapidOCR
             from rapidocr.utils.typings import OCRVersion, LangRec, ModelType
 
-            params = None
+            # 방향 판별(cls) 끔 — 짧은 줄을 뒤집힌 글자로 보고 180° 돌려 읽어 줄이 깨지거나 빠졌다(2026-10-13)
+            params = {"Global.use_cls": False}
             if self.lang and self.lang.lower() in ("korean", "kor", "ko"):
-                params = {
+                params.update({
                     "Rec.ocr_version": OCRVersion.PPOCRV5,
                     "Rec.lang_type": LangRec.KOREAN,
                     "Rec.model_type": ModelType.MOBILE,
-                }
+                })
             self._ocr = RapidOCR(params=params)
         except Exception as e:
             raise RuntimeError(

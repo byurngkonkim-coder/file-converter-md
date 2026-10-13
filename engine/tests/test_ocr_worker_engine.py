@@ -39,3 +39,12 @@ def test_engine_failure_does_not_stop_batch(monkeypatch):
     res = ocr_worker.run_ocr_on_images(["a.png", "b.png"], lang="korean")
     assert [r["path"] for r in res] == ["a.png", "b.png"]          # 두 장 모두 결과 항목이 있다
     assert all("RapidOCR" in r["error"] and "모델 파일 손상" in r["error"] for r in res)
+
+
+def test_textline_angle_classifier_off(monkeypatch):
+    # 방향 판별(cls)이 짧은 줄을 뒤집힌 글자로 보고 180° 돌려 읽어 줄이 깨지거나 빠졌다 (2026-10-13)
+    seen = []
+    monkeypatch.setattr(rapidocr, "RapidOCR", lambda params=None: seen.append(params) or object())
+    for lang in ("korean", "en"):
+        ocr_worker.OcrEngineWorker(lang=lang).ensure_engine()
+    assert [p["Global.use_cls"] for p in seen] == [False, False]

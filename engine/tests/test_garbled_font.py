@@ -55,3 +55,13 @@ def test_fixer_matches_cell_text_without_pdf_indent():
 def test_fixer_identity_without_garbled_lines():
     fix, n = gf.build_fixer([], lambda rect, orig: "")
     assert n == 0 and fix("멀쩡한 본문") == "멀쩡한 본문"
+
+
+def test_reocr_engine_angle_classifier_off(monkeypatch):
+    # 방향 판별(cls) 끔 — core/ocr_worker 와 같은 설정 (2026-10-13)
+    import rapidocr
+    seen = []
+    monkeypatch.setattr(rapidocr, "RapidOCR", lambda params=None: seen.append(params) or object())
+    monkeypatch.setattr(gf, "_ENGINE", None)
+    gf._get_engine()
+    assert seen[0]["Global.use_cls"] is False

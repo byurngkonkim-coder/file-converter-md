@@ -107,6 +107,7 @@ def _get_engine():
             from rapidocr import RapidOCR
             from rapidocr.utils.typings import LangRec, ModelType, OCRVersion
             _ENGINE = RapidOCR(params={
+                "Global.use_cls": False,
                 "Rec.ocr_version": OCRVersion.PPOCRV5,
                 "Rec.lang_type": LangRec.KOREAN,
                 "Rec.model_type": ModelType.MOBILE,
