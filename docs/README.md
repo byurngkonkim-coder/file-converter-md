@@ -171,9 +171,10 @@ errors: []
      - LocalAppData 사용자 설치 경로 4순위 자동 탐색
      - Python 미설치 시 즉시 꺼지지 않고 명확한 안내 후 대기(`pause`)합니다.
 
-3. **다중 엔진 OCR 하이브리드 지원 및 자립형 구동 (`core/ocr_worker.py`)**:
-   - 무거운 외부 라이브러리 없이도 Windows 10/11 시스템 내장 `winrt` (Windows Media OCR) 네이티브 지원으로 USB만 꽂으면 즉시 고속 한글/영문 OCR 구동 가능.
-   - `RapidOCR`(ONNX) 및 `PaddleOCR`와의 멀티 호환으로 다양한 가상환경에 유연하게 대응합니다.
+3. **OCR 엔진은 RapidOCR 한글 v5 하나 (`core/ocr_worker.py`)**:
+   - 한국어는 `korean_PP-OCRv5_rec_mobile` 모델로 읽습니다. 다른 엔진이나 기본(중국어+영어) 모델로 조용히 바꾸지 않습니다.
+   - 실행 PC의 Python 에 `rapidocr`·`onnxruntime` 이 있어야 합니다(`requirements.txt`). 없으면 그 이미지에 원인을 기록하고 다음 파일 변환을 계속합니다.
+   - (2026-10-13 이전의 Windows 내장 OCR·PaddleOCR·구버전 RapidOCR 예비 경로는 제거)
 
 4. **유니코드 NFC 정규화 및 GUI 동적 폴백 (`core/batch_runner.py`, `gui.py`)**:
    - Mac/Windows 간 파일 복사 시 발생하는 한글 자모 분리 현상(NFD)을 NFC로 자동 정규화합니다.
