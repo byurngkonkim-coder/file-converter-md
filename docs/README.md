@@ -44,6 +44,7 @@ d:\백업\utility\파일형식변환기_MD\
 │   ├── config.py              # 경로 설정 및 지원 확장자
 │   ├── text_cleaner.py        # 인코딩 자동감지, 표 마크다운 변환, 텍스트 정제
 │   ├── text_postprocessor.py  # 가독성 정제 (줄바꿈 결합, 어절 복원, 페이지구분 제거)
+│   ├── korean_spacing_corrector.py # 한글 띄어쓰기·맞춤법·OCR 오인식 교정 (01_OCR·MyOCR 교정기와 같은 파일)
 │   ├── com_session.py         # Office/HWP COM 세션 풀 & 한글 보안 팝업 자동 승인
 │   ├── metadata_extractor.py  # 제목, 범주, 키워드, 개체명, 요약 자동 추출
 │   ├── frontmatter_builder.py # OKF 규격 YAML Front Matter 조립 및 유효성 검증
@@ -64,6 +65,7 @@ d:\백업\utility\파일형식변환기_MD\
 │   └── epub_adapter.py        # 전자책 (.epub)
 ├── tests/                     # 자체 검증 및 테스트
 │   ├── __init__.py
+│   ├── test_korean_spacing_corrector.py # 한글 교정기 회귀 테스트 (세 프로그램 공통 내용)
 │   └── test_converter.py      # E2E 및 단위 테스트 스위트 (7개 항목 무결성 검증)
 ├── 결과_MD/                   # 순수 변환 결과 Markdown 파일 전용 저장소
 └── 변환리포트/                 # 변환 실행 보고서 및 이력 전용 저장소
