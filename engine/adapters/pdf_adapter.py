@@ -19,6 +19,7 @@ from typing import Any
 
 from adapters.base import BaseAdapter, ConversionResult, ScannedDocumentSkipped
 from adapters.ocr_adapter import OcrAdapter
+from core import noise_rules
 from core.text_cleaner import rows_to_table, tidy
 from core.text_postprocessor import postprocess_markdown, rejoin_page_boundary_paragraphs
 from core.korean_spacing_corrector import refine_korean_text
@@ -423,7 +424,11 @@ def reconstruct_ocr_page(lines: list[dict], img_w: float, img_h: float) -> str:
     row_strings = []
     for row in rows:
         row.sort(key=lambda x: x["x0"])
-        row_text = " ".join(x["text"] for x in row)
+        # 01_OCR noise_rules: 그림·장식을 읽은 잡음 줄은 버리고, 본문 줄은 잡음 토큰·전각 부호·깨진 번호만 고친다
+        # (단락으로 묶기 전에 해야 잡음 줄이 본문 단락에 섞이지 않는다)
+        row_text = noise_rules.clean_page(" ".join(x["text"] for x in row))
+        if not row_text:
+            continue
         row_strings.append({
             "text": row_text,
             "y0": min(x["y0"] for x in row),
@@ -477,6 +482,25 @@ def reconstruct_ocr_page(lines: list[dict], img_w: float, img_h: float) -> str:
     cleaned_page = fix_punctuation_spacing(cleaned_page)
 
     return cleaned_page
+
+
+def apply_ocr_page_rules(pages: list[str]) -> list[str]:
+    """OCR 쪽 목록 단위 규칙(01_OCR noise_rules): 쪽마다 다르게 깨져 읽힌 머리글 제거,
+    출처 표기 명언집의 '명언 → 저자' 그룹 경계 표지. 디지털 문서 경로에는 쓰지 않는다."""
+    pages, _ = noise_rules.strip_fuzzy_headers(pages)
+    pages, _ = noise_rules.group_attributed_quotes(pages)
+    return pages
+
+
+def apply_ocr_text_rules(text: str) -> str:
+    """OCR 본문 단위 규칙(01_OCR noise_rules) — 줄 잇기(postprocess_markdown)가 끝난 뒤에 부른다."""
+    text = noise_rules.finish_groups(text)              # 그룹 경계 표지 → 빈 줄
+    text, _ = noise_rules.repair_quote_brackets(text)   # 인용 괄호 〈〉「」『』 짝 복원
+    text, _ = noise_rules.split_language_lines(text)    # 한 줄에 붙은 한글·영어 문장 가르기
+    if noise_rules.is_numbered_book(text):              # 번호 붙은 항목 책(명언집)만 — 일반 표·목록 보호
+        text, _ = noise_rules.redistribute_number_stacks(text)
+        text, _ = noise_rules.paragraph_entries(text)
+    return text
 
 
 class PdfAdapter(BaseAdapter):
@@ -564,17 +588,24 @@ class PdfAdapter(BaseAdapter):
 
                 ocr_results = ocr_adapter.perform_ocr_batch(tmp_img_paths, lang="korean")
 
-                ocr_pages = []
-                merged_ocr_parts = []
+                page_texts = []
                 avg_scores = []
-
-                for p_num, (res, (pw, ph)) in enumerate(zip(ocr_results, page_dims), start=1):
+                for res, (pw, ph) in zip(ocr_results, page_dims):
                     lines = res.get("lines", [])
                     if lines:
                         p_txt = reconstruct_ocr_page(lines, pw, ph)
                     else:
-                        p_txt = res.get("text", "").strip()
+                        p_txt = noise_rules.clean_page(res.get("text", "").strip())
+                    page_texts.append(p_txt.strip())
+                    if "avg_score" in res:
+                        avg_scores.append(res["avg_score"])
+                # 문서 전체를 봐야 하는 규칙(깨진 머리글·명언 그룹)은 쪽을 잇기 전에
+                page_texts = apply_ocr_page_rules(page_texts)
 
+                ocr_pages = []
+                merged_ocr_parts = []
+
+                for p_num, p_txt in enumerate(page_texts, start=1):
                     p_txt = p_txt.strip()
                     ocr_pages.append((p_num, p_txt))
                     if p_txt:
@@ -588,11 +619,8 @@ class PdfAdapter(BaseAdapter):
                             else:
                                 merged_ocr_parts[-1] = rejoin_page_boundary_paragraphs(prev_ocr, p_txt)
 
-                    if "avg_score" in res:
-                        avg_scores.append(res["avg_score"])
-
                 ocr_body = "\n\n".join(merged_ocr_parts)
-                final_ocr_body = postprocess_markdown(tidy(ocr_body))
+                final_ocr_body = apply_ocr_text_rules(postprocess_markdown(tidy(ocr_body)))
 
                 mean_score = sum(avg_scores) / len(avg_scores) if avg_scores else 0.0
                 conf = "high" if mean_score >= 0.85 else ("medium" if mean_score >= 0.65 else "low")

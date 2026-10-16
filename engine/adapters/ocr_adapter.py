@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from adapters.base import BaseAdapter, ConversionResult, ScannedDocumentSkipped
+from core import noise_rules
 from core.config import get_ocr_python
 from core.text_cleaner import tidy
 
@@ -148,12 +149,13 @@ class OcrAdapter(BaseAdapter):
                     im_w, im_h = im.size
                 text = reconstruct_ocr_page(lines, im_w, im_h)
             except Exception:
-                text = raw_text
+                text = noise_rules.clean_page(raw_text)
         else:
-            text = raw_text
+            text = noise_rules.clean_page(raw_text)
 
+        from adapters.pdf_adapter import apply_ocr_text_rules
         from core.text_postprocessor import postprocess_markdown
-        final_body = postprocess_markdown(tidy(text if text else "인식된 텍스트가 없습니다."))
+        final_body = apply_ocr_text_rules(postprocess_markdown(tidy(text if text else "인식된 텍스트가 없습니다.")))
 
         status = "success" if text else "partial"
         review_required = (conf in ("low", "unknown")) or (not text)
